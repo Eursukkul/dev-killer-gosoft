@@ -2,10 +2,13 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
+
 	"gitlab.com/devskiller-tasks/rest-api-blog-golang/model"
 	"gitlab.com/devskiller-tasks/rest-api-blog-golang/repository"
-	"net/http"
 )
 
 type RestApiService struct {
@@ -69,6 +72,35 @@ func handleGetPostByPostId(svc *RestApiService) func(http.ResponseWriter, *http.
 
 		// If the post with the given ID exists, the response should be a valid JSON representation of the post entity:
 		// { "Id": 2, "Title": "test title", "Content": "this is a post content", "CreationDate": "1970-01-01T03:46:40+01:00" }
+		w.Header().Set("Content-Type", "application/json")
+		postIdStr := r.PathValue("postId")
+		postId, err := strconv.ParseUint(postIdStr, 10, 64)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			data, _ := json.Marshal(&AckJsonResponse{Message: "Wrong id path variable: " + postIdStr, Status: 400})
+			w.Write(data)
+			return
+		}
+		post, err := svc.postRepository.GetById(postId)
+		if err != nil {
+			var notFound repository.PostNotFoundError
+			if errors.As(err, &notFound) {
+				w.WriteHeader(http.StatusNotFound)
+				data, _ := json.Marshal(&AckJsonResponse{Message: fmt.Sprintf("Post with id: %d does not exist", postId), Status: 404})
+				w.Write(data)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		data, err := json.Marshal(post)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Write(data)
 	}
 }
 
@@ -91,6 +123,22 @@ func handleGetCommentsByPostId(svc *RestApiService) func(http.ResponseWriter, *h
 		//     {"Id": 3, "PostId": 101, "Comment": "comment2", "Author": "author4", "CreationDate": "1970-01-01T03:46:40+01:10"},
 		//     {"Id": 5, "PostId": 101, "Comment": "comment3", "Author": "author13", "CreationDate": "1970-01-01T03:46:40+01:15"}
 		// ]
+		postId := r.URL.Query().Get("postId")
+		postIdUint, err := strconv.ParseUint(postId, 10, 64)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Wrong id path variable: %s", postId), http.StatusBadRequest)
+			return
+		}
+		comments := svc.commentRepository.GetAllByPostId(postIdUint)
+		w.Header().Set("Content-Type", "application/json")
+		data, err := json.Marshal(comments)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := w.Write(data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
 }
 
@@ -127,5 +175,27 @@ func handleAddComment(svc *RestApiService) func(http.ResponseWriter, *http.Reque
 		// { "Id": 123, "PostId": 663, "Comment": "this is a comment", "Author": "blogger", "CreationDate": "1970-01-01T03:46:40+01:00" }
 		// Response:
 		// { "Message": "Comment with id: 123 successfully added", "Status": 200 }
+		w.Header().Set("Content-Type", "application/json")
+		var comment model.Comment
+		if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			data, _ := json.Marshal(&AckJsonResponse{Message: "Could not deserialize comment JSON payload", Status: 400})
+			w.Write(data)
+			return
+		}
+		if err := svc.commentRepository.Insert(comment); err != nil {
+			var exists repository.CommentAlreadyExistsError
+			if errors.As(err, &exists) {
+				w.WriteHeader(http.StatusBadRequest)
+				data, _ := json.Marshal(&AckJsonResponse{Message: err.Error(), Status: 400})
+				w.Write(data)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		data, _ := json.Marshal(&AckJsonResponse{Message: fmt.Sprintf("Comment with id: %d successfully added", comment.Id), Status: http.StatusOK})
+		w.Write(data)
 	}
 }

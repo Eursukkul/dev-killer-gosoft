@@ -38,6 +38,12 @@ func (c *CommentRepository) Insert(comment model.Comment) error {
 	// Insert should insert a comment passed as an argument to the persistent in memory repository.
 	// The method should return an error as an instance of `CommentAlreadyExistsError` struct
 	// when a comment with given id already exists in the repository.
+	for _, existing := range c.repository {
+		if existing.Id == comment.Id {
+			return CommentAlreadyExistsError{id: comment.Id}
+		}
+	}
+	c.repository = append(c.repository, comment)
 	return nil
 }
 
@@ -45,14 +51,25 @@ func (c *CommentRepository) GetById(id uint64) (*model.Comment, error) {
 	// GetById should return a comment from a repository that has a given id.
 	// If there's no comment with given id, this function should return a (nil, CommentNotFoundError) pair
 	// with CommentNotFound instance having id member variable set with id passed to this method.
-	return nil, nil
+	for _, existing := range c.repository {
+		if existing.Id == id {
+			return &existing, nil
+		}
+	}
+	return nil, CommentNotFoundError{id: id}
 }
 
 func (c *CommentRepository) GetAllByPostId(id uint64) []model.Comment {
 	// GetAllByPostId should return a slice of all comments that have PostId member variable
 	// equal to given id.
 	// The method should return an empty slice when there are no comments with given id in the repository.
-	return nil
+	var result []model.Comment
+	for _, existing := range c.repository {
+		if existing.PostId == id {
+			result = append(result, existing)
+		}
+	}
+	return result
 }
 
 type PostRepository struct {
@@ -88,6 +105,12 @@ func (c *PostRepository) Insert(post model.Post) error {
 	// Insert should insert a post passed as an argument to the persistent in memory repository.
 	// The method should return an error as an instance of `PostAlreadyExistsError` struct
 	// when a post with given id already exists in the repository.
+	for _, existing := range c.repository {
+		if existing.Id == post.Id {
+			return PostAlreadyExistsError{id: post.Id}
+		}
+	}
+	c.repository = append(c.repository, post)
 	return nil
 }
 
@@ -95,5 +118,10 @@ func (c *PostRepository) GetById(id uint64) (*model.Post, error) {
 	// GetById should return a post from a repository that has a given id.
 	// If there's no post with given id, this function should return a (nil, PostNotFoundError) pair
 	// with PostNotFoundError instance having id member variable set with id passed to this method.
-	return nil, nil
+	for _, existing := range c.repository {
+		if existing.Id == id {
+			return &existing, nil
+		}
+	}
+	return nil, PostNotFoundError{id: id}
 }
